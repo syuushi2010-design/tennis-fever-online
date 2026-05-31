@@ -164,6 +164,8 @@ canvas{max-width:640px;width:100%;display:block;}
     <div class="net-status" id="net-status">親機か子機を選んでください</div>
     <div class="net-help" id="net-chara-title">自分のキャラ</div>
     <div class="net-chara-list" id="net-chara-list"></div>
+    <div class="net-help" id="net-cpu-title" style="margin-top:.3rem;color:#80cbc4;">みかたCPUのキャラ</div>
+    <div class="net-chara-list" id="net-cpu-list"></div>
     <div class="net-panel hidden" id="net-host-panel">
       <div class="net-row">
         <button class="net-mini-btn" onclick="netCreateRoom()">部屋を作る</button>
@@ -446,25 +448,29 @@ function netChooseRole(role){
     document.getElementById("net-host-panel").classList.remove("hidden");
     document.getElementById("net-guest-panel").classList.add("hidden");
     document.getElementById("net-room-code").textContent="----";
-    netSetStatus("親機: P1のキャラを選んで、部屋を作ってください");
+    netSetStatus("親機: P1とみかたCPUのキャラを選んで、部屋を作ってください");
   } else {
     controlTypes=["remote","cpu","local","cpu"];
     document.getElementById("net-host-panel").classList.add("hidden");
     document.getElementById("net-guest-panel").classList.remove("hidden");
     document.getElementById("net-room-input").value="";
-    netSetStatus("子機: P2のキャラを選んで、部屋番号を入れてください");
+    netSetStatus("子機: P2とみかたCPUのキャラを選んで、部屋番号を入れてください");
   }
   updateNetCharaChoices();
 }
 function netLocalSlot(){
   return net.role==="guest"?2:0;
 }
+function netCpuSlot(){
+  return net.role==="guest"?3:1;
+}
 function updateNetCharaChoices(){
   var box=document.getElementById("net-chara-list");
   if(!box)return;
   var slot=netLocalSlot();
+  var cpuSlot=netCpuSlot();
   box.innerHTML="";
-  document.getElementById("net-chara-title").textContent=net.role==="guest"?"P2のキャラ":"P1のキャラ";
+  document.getElementById("net-chara-title").textContent=net.role==="guest"?"P2（あなた）のキャラ":"P1（あなた）のキャラ";
   CHARAS.forEach(function(c,i){
     var btn=document.createElement("button");
     btn.className="net-chara-btn"+(selections[slot]===i?" active":"");
@@ -475,6 +481,20 @@ function updateNetCharaChoices(){
       netSend({type:"select",slot:slot,chara:i});
     };
     box.appendChild(btn);
+  });
+  var cpuBox=document.getElementById("net-cpu-list");
+  if(!cpuBox)return;
+  cpuBox.innerHTML="";
+  CHARAS.forEach(function(c,i){
+    var btn=document.createElement("button");
+    btn.className="net-chara-btn"+(selections[cpuSlot]===i?" active":"");
+    btn.innerHTML=c.emoji+"<span>"+c.name+"</span>";
+    btn.onclick=function(){
+      selections[cpuSlot]=i;
+      updateNetCharaChoices();
+      netSend({type:"select",slot:cpuSlot,chara:i});
+    };
+    cpuBox.appendChild(btn);
   });
 }
 function netSetStatus(text){
@@ -803,7 +823,7 @@ function netSetupPeerChannel(conn){
   conn.on("open",function(){
     net.connected=true;
     netSetStatus("接続しました。試合を準備しています");
-    netSend({type:"hello",version:PROTOCOL_VERSION,role:net.role,chara:selections[netLocalSlot()]});
+    netSend({type:"hello",version:PROTOCOL_VERSION,role:net.role,chara:selections[netLocalSlot()],cpuChara:selections[netCpuSlot()]});
   });
   conn.on("data",function(data){netHandleMessage(data);});
   conn.on("close",function(){
@@ -911,7 +931,7 @@ function netSetupChannel(dc){
   dc.onopen=function(){
     net.connected=true;
     netSetStatus("接続しました。試合を準備しています");
-    netSend({type:"hello",version:PROTOCOL_VERSION,role:net.role,chara:selections[netLocalSlot()]});
+    netSend({type:"hello",version:PROTOCOL_VERSION,role:net.role,chara:selections[netLocalSlot()],cpuChara:selections[netCpuSlot()]});
   };
   dc.onclose=function(){
     net.connected=false;
@@ -941,11 +961,14 @@ function netHandleMessage(data){
     }
     if(net.role==="host"&&msg.chara!==undefined){
       selections[2]=msg.chara;
+      if(msg.cpuChara!==undefined)selections[3]=msg.cpuChara;
       netSendStart();
     }
   } else if(msg.type==="select"){
     if(net.role==="host"&&msg.slot===2)selections[2]=msg.chara;
+    if(net.role==="host"&&msg.slot===3)selections[3]=msg.chara;
     if(net.role==="guest"&&msg.slot===0)selections[0]=msg.chara;
+    if(net.role==="guest"&&msg.slot===1)selections[1]=msg.chara;
   } else if(msg.type==="start"){
     if(msg.version!==PROTOCOL_VERSION){
       netSetStatus("バージョンが違います。両方の画面を再読み込みしてください");
