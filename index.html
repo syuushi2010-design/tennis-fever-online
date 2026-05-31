@@ -15,7 +15,7 @@
 var manifestData={name:"テニス フィーバー！",short_name:"テニスFever",start_url:".",display:"fullscreen",orientation:"landscape",background_color:"#1a1a2e",theme_color:"#1a1a2e",icons:[{src:"icon.png",sizes:"192x192",type:"image/png"}]};
 var blob=new Blob([JSON.stringify(manifestData)],{type:"application/json"});
 var link=document.createElement("link");link.rel="manifest";link.href=URL.createObjectURL(blob);document.head.appendChild(link);
-if("serviceWorker" in navigator){var swCode="self.addEventListener('install',function(e){self.skipWaiting();});";navigator.serviceWorker.register(URL.createObjectURL(new Blob([swCode],{type:"application/javascript"}))).catch(function(){});}
+if("serviceWorker" in navigator){var swCode="self.addEventListener('install',function(e){self.skipWaiting();});self.addEventListener('activate',function(e){e.waitUntil(self.clients.claim());});self.addEventListener('fetch',function(e){e.respondWith(fetch(e.request));});";navigator.serviceWorker.register(URL.createObjectURL(new Blob([swCode],{type:"application/javascript"}))).catch(function(){});}
 </script>
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
