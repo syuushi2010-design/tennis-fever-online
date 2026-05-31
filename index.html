@@ -117,6 +117,18 @@ canvas{max-width:640px;width:100%;display:block;}
 #result-screen h2{font-family:"Fredoka One",cursive;font-size:2.5rem;color:#ffd700;text-shadow:3px 3px 0 #b8860b;text-align:center;}
 #result-screen p{color:#fff;font-size:1rem;}
 .result-btns{display:flex;gap:.8rem;margin-top:.5rem;}
+/* ラケット選択 */
+.racket-label{font-size:.55rem;color:#80cbc4;margin-top:.15rem;}
+.racket-select-btn{width:52px;height:28px;border-radius:8px;border:2px solid #335;background:#0f1a2a;cursor:pointer;font-size:.85rem;display:flex;align-items:center;justify-content:center;transition:all .15s;padding:0;}
+.racket-select-btn.active{border-color:#00bcd4;box-shadow:0 0 8px #00bcd4;}
+.racket-select-btn:active{transform:scale(.95);}
+.racket-popup{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);background:#0f1a2b;border:2px solid #00bcd4;border-radius:16px;padding:.9rem;z-index:210;display:flex;gap:.4rem;flex-wrap:wrap;justify-content:center;max-width:340px;}
+.racket-popup.hidden{display:none;}
+.racket-option{width:52px;height:62px;border-radius:10px;border:2px solid #335;background:#081321;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;transition:all .15s;}
+.racket-option:active{transform:scale(.95);}
+.racket-option .r-emoji{font-size:1.15rem;}
+.racket-option .r-name{font-size:.42rem;color:#80cbc4;}
+.racket-option .r-desc{font-size:.38rem;color:#546e7a;}
 </style>
 </head>
 <body>
@@ -183,10 +195,14 @@ canvas{max-width:640px;width:100%;display:block;}
         <div class="chara-slot">
           <label id="slot-a1-label">P1</label>
           <button class="chara-select-btn" id="slot-a1" onclick="openPicker(0)">❓</button>
+          <div class="racket-label">ラケット</div>
+          <button class="racket-select-btn" id="racket-a1" onclick="openRacketPicker(0)">🎾</button>
         </div>
         <div class="chara-slot">
           <label id="slot-a2-label">CPU</label>
           <button class="chara-select-btn" id="slot-a2" onclick="openPicker(1)">❓</button>
+          <div class="racket-label">ラケット</div>
+          <button class="racket-select-btn" id="racket-a2" onclick="openRacketPicker(1)">🎾</button>
         </div>
       </div>
     </div>
@@ -198,16 +214,22 @@ canvas{max-width:640px;width:100%;display:block;}
         <div class="chara-slot">
           <label id="slot-b1-label">CPU</label>
           <button class="chara-select-btn" id="slot-b1" onclick="openPicker(2)">❓</button>
+          <div class="racket-label">ラケット</div>
+          <button class="racket-select-btn" id="racket-b1" onclick="openRacketPicker(2)">🎾</button>
         </div>
         <div class="chara-slot">
           <label id="slot-b2-label">CPU</label>
           <button class="chara-select-btn" id="slot-b2" onclick="openPicker(3)">❓</button>
+          <div class="racket-label">ラケット</div>
+          <button class="racket-select-btn" id="racket-b2" onclick="openRacketPicker(3)">🎾</button>
         </div>
       </div>
     </div>
   </div>
   <!-- キャラ選択ポップアップ -->
   <div class="chara-popup hidden" id="chara-popup"></div>
+  <!-- ラケット選択ポップアップ -->
+  <div class="racket-popup hidden" id="racket-popup"></div>
   <div style="display:flex;gap:.8rem;margin-top:.5rem;">
     <button class="btn btn-orange" onclick="startGame()" id="start-game-btn">ゲーム開始！</button>
     <button class="btn btn-gray" onclick="showMode()">← 戻る</button>
@@ -261,6 +283,16 @@ canvas{max-width:640px;width:100%;display:block;}
 <div class="fever-announce" id="fever-announce"></div>
 
 <script>
+/* ===== ラケット定義 ===== */
+var RACKETS = [
+  { id:"normal",  name:"ノーマル", emoji:"🎾", color:"#9e9e9e", desc:"通常" },
+  { id:"speed",   name:"スピード", emoji:"💨", color:"#ffd700", desc:"球速+35%" },
+  { id:"power",   name:"パワー",   emoji:"💪", color:"#e53935", desc:"衝撃波" },
+  { id:"spin",    name:"スピン",   emoji:"🌀", color:"#9c27b0", desc:"カーブ球" },
+  { id:"ice",     name:"アイス",   emoji:"❄", color:"#00bcd4",  desc:"スロウ" },
+  { id:"thunder", name:"サンダー", emoji:"⚡", color:"#ff9800", desc:"雷撃" }
+];
+
 /* ===== キャラクター定義 ===== */
 var CHARAS = [
   { id:"mario",  name:"マリオ",   emoji:"🔴", color:"#e53935", hat:"#e53935", body:"#e53935", overall:"#1565c0", letter:"M" },
@@ -273,6 +305,9 @@ var CHARAS = [
 var gameMode = "solo";
 // selections[0~3] = キャラindex  スロット順: A1, A2, B1, B2
 var selections = [0, 1, 2, 3];
+// racketSelections[0~3] = ラケットindex（スロット順）
+var racketSelections = [0, 0, 0, 0];
+var racketPickerTarget = -1;
 // isHuman[0~3]: そのスロットが人間プレイヤーか
 var isHuman = [true, false, false, false];
 // controlTypes[0~3]: local / remote / cpu
@@ -487,6 +522,7 @@ function updateSlotBtns(){
     document.getElementById(id).textContent=c.emoji;
   });
   updateSlotBadges();
+  updateRacketBtns();
 }
 function openPicker(slotIdx){
   pickerTarget=slotIdx;
@@ -509,7 +545,46 @@ function closePopup(){document.getElementById("chara-popup").classList.add("hidd
 document.addEventListener("click",function(e){
   var popup=document.getElementById("chara-popup");
   if(!popup.classList.contains("hidden")&&!popup.contains(e.target)&&!e.target.classList.contains("chara-select-btn")){closePopup();}
+  var rpopup=document.getElementById("racket-popup");
+  if(!rpopup.classList.contains("hidden")&&!rpopup.contains(e.target)&&!e.target.classList.contains("racket-select-btn")){closeRacketPopup();}
 });
+
+function openRacketPicker(slotIdx){
+  racketPickerTarget=slotIdx;
+  var popup=document.getElementById("racket-popup");
+  popup.innerHTML="";
+  RACKETS.forEach(function(r,ri){
+    var btn=document.createElement("button");
+    btn.className="racket-option";
+    btn.innerHTML="<span class='r-emoji'>"+r.emoji+"</span><span class='r-name'>"+r.name+"</span><span class='r-desc'>"+r.desc+"</span>";
+    btn.style.borderColor=racketSelections[slotIdx]===ri?r.color:"#335";
+    btn.onclick=function(){selectRacket(ri);};
+    popup.appendChild(btn);
+  });
+  popup.classList.remove("hidden");
+}
+function selectRacket(ri){
+  if(racketPickerTarget>=0){
+    racketSelections[racketPickerTarget]=ri;
+    updateRacketBtns();
+  }
+  closeRacketPopup();
+}
+function closeRacketPopup(){
+  document.getElementById("racket-popup").classList.add("hidden");
+  racketPickerTarget=-1;
+}
+function updateRacketBtns(){
+  var ids=["racket-a1","racket-a2","racket-b1","racket-b2"];
+  ids.forEach(function(id,i){
+    var btn=document.getElementById(id);
+    if(!btn)return;
+    var rk=RACKETS[racketSelections[i]];
+    btn.textContent=rk.emoji;
+    btn.style.borderColor=rk.id==="normal"?"#335":rk.color;
+    btn.style.boxShadow=rk.id==="normal"?"":"0 0 6px "+rk.color;
+  });
+}
 
 /* ===== ゲーム開始 ===== */
 function startGame(){
@@ -565,18 +640,19 @@ function initState(){
   // ダブルスの位置
   return {
     ball:{x:CW/2,y:NY+Math.floor(CH*0.15),vx:1.2*(Math.random()>.5?1:-1),vy:-1.76,speed:2.0,trail:[],marioBlast:false,marioTeam:-1,
-      bz:0,   // 空中の高さ（0=地面）
-      bvz:7.5 // 上向きの初速（正=上昇）
+      bz:0,bvz:7.5,
+      iceSlow:false,iceTeam:-1
     },
     players:[
-      {x:CW/2-Math.floor(CW*0.07),y:CB-Math.floor(CH*0.12),hp:MAX_HP,fever:0,feverReady:false,swing:0,swingDir:1,team:0,charaIdx:selections[0],human:isHuman[0],controlType:controlTypes[0],stunTimer:0},
-      {x:CW/2+Math.floor(CW*0.07),y:NY+Math.floor(CH*0.10),hp:MAX_HP,fever:0,feverReady:false,swing:0,swingDir:1,team:0,charaIdx:selections[1],human:isHuman[1],controlType:controlTypes[1],stunTimer:0},
-      {x:CW/2-Math.floor(CW*0.07),y:CT+Math.floor(CH*0.12),hp:MAX_HP,fever:0,feverReady:false,swing:0,swingDir:1,team:1,charaIdx:selections[2],human:isHuman[2],controlType:controlTypes[2],stunTimer:0},
-      {x:CW/2+Math.floor(CW*0.07),y:NY-Math.floor(CH*0.10),hp:MAX_HP,fever:0,feverReady:false,swing:0,swingDir:1,team:1,charaIdx:selections[3],human:isHuman[3],controlType:controlTypes[3],stunTimer:0}
+      {x:CW/2-Math.floor(CW*0.07),y:CB-Math.floor(CH*0.12),hp:MAX_HP,fever:0,feverReady:false,swing:0,swingDir:1,team:0,charaIdx:selections[0],racketIdx:racketSelections[0],human:isHuman[0],controlType:controlTypes[0],stunTimer:0,slowTimer:0},
+      {x:CW/2+Math.floor(CW*0.07),y:NY+Math.floor(CH*0.10),hp:MAX_HP,fever:0,feverReady:false,swing:0,swingDir:1,team:0,charaIdx:selections[1],racketIdx:racketSelections[1],human:isHuman[1],controlType:controlTypes[1],stunTimer:0,slowTimer:0},
+      {x:CW/2-Math.floor(CW*0.07),y:CT+Math.floor(CH*0.12),hp:MAX_HP,fever:0,feverReady:false,swing:0,swingDir:1,team:1,charaIdx:selections[2],racketIdx:racketSelections[2],human:isHuman[2],controlType:controlTypes[2],stunTimer:0,slowTimer:0},
+      {x:CW/2+Math.floor(CW*0.07),y:NY-Math.floor(CH*0.10),hp:MAX_HP,fever:0,feverReady:false,swing:0,swingDir:1,team:1,charaIdx:selections[3],racketIdx:racketSelections[3],human:isHuman[3],controlType:controlTypes[3],stunTimer:0,slowTimer:0}
     ],
     scores:[0,0],games:[0,0],
     lastHit:-1,ballActive:true,rallyCount:0,feverEffect:null,touchTarget:null,
-    rosettaCurve:0  // ロゼッタの球曲がりカウンター（0=曲がりなし）
+    rosettaCurve:0,
+    spinCurve:null
   };
 }
 
@@ -969,8 +1045,8 @@ function netApplySnapshot(){
 }
 
 /* ===== AI ===== */
-function aiMove(i){
-  var p=state.players[i],ball=state.ball,spd=2.08;
+function aiMove(i,speedMult){
+  var p=state.players[i],ball=state.ball,spd=2.08*(speedMult||1.0);
   var myTeam=p.team;
 
   // このCPUが「人間プレイヤーの相方（味方サポート）」かどうか判定
@@ -1131,6 +1207,83 @@ function checkHits(){
       state.rosettaCurve=0; // 前の曲がりをリセット
 
       var charaId=CHARAS[p.charaIdx].id;
+      var racketId=RACKETS[p.racketIdx||0].id;
+
+      // ===ラケット効果===
+
+      // アイス：相手が打ったアイスボールを受けたらスロウ
+      if(state.ball.iceSlow&&state.ball.iceTeam!==p.team){
+        p.slowTimer=90;
+        state.ball.iceSlow=false;
+        spawnParts(p.x,p.y,"#b3e5fc",14);
+        flashScreen("#00bcd4");
+        showAnnounce("❄ アイス：スロウ！");
+      }
+
+      // スピードラケット：球速+35%
+      if(racketId==="speed"){
+        ball.speed=Math.min(5.5,ball.speed*1.35);
+        ball.vy=Math.abs(ball.speed)*dir;
+        spawnParts(ball.x,ball.y,"#ffd700",10);
+        showAnnounce("💨 スピードショット！");
+      }
+
+      // パワーラケット：近くの敵を後ろに吹き飛ばす
+      if(racketId==="power"){
+        var blasted=false;
+        state.players.forEach(function(ep){
+          if(ep.team===p.team)return;
+          var edx=ep.x-ball.x,edy=ep.y-ball.y;
+          if(Math.sqrt(edx*edx+edy*edy)<90){
+            var blowDir2=ep.team===0?1:-1;
+            ep.y+=blowDir2*28;
+            if(ep.team===0){ep.y=Math.max(NY+PR+2,Math.min(CB-PR,ep.y));}
+            else{ep.y=Math.max(CT+PR,Math.min(NY-PR-2,ep.y));}
+            spawnParts(ep.x,ep.y,"#e53935",10);
+            blasted=true;
+          }
+        });
+        if(blasted)showAnnounce("💪 パワーショット！衝撃波！");
+        else showAnnounce("💪 パワーショット！");
+      }
+
+      // スピンラケット：ボールをランダム方向にカーブさせる
+      if(racketId==="spin"){
+        var spinDir2=(Math.random()>0.5)?1:-1;
+        state.spinCurve={dir:spinDir2,timer:100};
+        ball.vx+=spinDir2*1.8;
+        ball.vx=Math.max(-3.5,Math.min(3.5,ball.vx));
+        spawnParts(ball.x,ball.y,"#9c27b0",12);
+        showAnnounce("🌀 スピンショット！");
+      }
+
+      // アイスラケット：ボールにアイスフラグを付ける
+      if(racketId==="ice"){
+        state.ball.iceSlow=true;
+        state.ball.iceTeam=p.team;
+        spawnParts(ball.x,ball.y,"#00bcd4",10);
+        showAnnounce("❄ アイスショット！");
+      }
+
+      // サンダーラケット：範囲内の敵にダメージ＋スタン
+      if(racketId==="thunder"){
+        var hitCount=0;
+        state.players.forEach(function(ep){
+          if(ep.team===p.team)return;
+          var edx=ep.x-p.x,edy=ep.y-p.y;
+          if(Math.sqrt(edx*edx+edy*edy)<110){
+            ep.hp=Math.max(0,ep.hp-12);
+            ep.stunTimer=Math.max(ep.stunTimer,35);
+            spawnParts(ep.x,ep.y,"#ffd700",14);
+            hitCount++;
+          }
+        });
+        effects.push({type:"thunder",color:"#ffd700",alpha:0.7,ttl:50});
+        flashScreen("#ffd700");
+        updateHPBars();
+        if(hitCount>0)showAnnounce("⚡ サンダーショット！雷撃！");
+        else showAnnounce("⚡ サンダーショット！");
+      }
 
       // ===マリオ：打った球に「マリオ印」を付ける。受けた相手1人を後ろに吹き飛ばす===
       if(charaId==="mario"){
@@ -1279,8 +1432,11 @@ function resetPositions(serveTeam){
   ball.vx=(Math.random()-.5)*1.2;
   fireballs=[];
   state.rosettaCurve=0;
+  state.spinCurve=null;
   state.ball.marioBlast=false;state.ball.marioTeam=-1;
+  state.ball.iceSlow=false;state.ball.iceTeam=-1;
   state.ball.bz=0;state.ball.bvz=7.5;
+  state.players.forEach(function(p){p.slowTimer=0;});
   var ox=Math.floor(CW*0.07);
   state.players[0].x=CW/2-ox;state.players[0].y=CB-Math.floor(CH*0.12);state.players[0].swing=0;state.players[0].stunTimer=0;
   state.players[1].x=CW/2+ox;state.players[1].y=NY+Math.floor(CH*0.10);state.players[1].swing=0;state.players[1].stunTimer=0;
@@ -1437,30 +1593,42 @@ function drawPlayer(p){
   ctx.beginPath();ctx.ellipse(p.x,p.y+PR+2,PR*.9,PR*.3,0,0,Math.PI*2);
   ctx.fillStyle="#000";ctx.fill();ctx.restore();
   var c=CHARAS[p.charaIdx];
-  if(c.id==="mario")drawMario(p.x,p.y,p.swing,p.swingDir,c);
-  else if(c.id==="luigi")drawLuigi(p.x,p.y,p.swing,p.swingDir,c);
-  else if(c.id==="bowser")drawBowser(p.x,p.y,p.swing,p.swingDir);
-  else drawRosetta(p.x,p.y,p.swing,p.swingDir);
+  var rk=RACKETS[p.racketIdx||0];
+  if(c.id==="mario")drawMario(p.x,p.y,p.swing,p.swingDir,c,rk);
+  else if(c.id==="luigi")drawLuigi(p.x,p.y,p.swing,p.swingDir,c,rk);
+  else if(c.id==="bowser")drawBowser(p.x,p.y,p.swing,p.swingDir,rk);
+  else drawRosetta(p.x,p.y,p.swing,p.swingDir,rk);
   ctx.restore();
 }
 
-function drawRacket(x,y,swing,swingDir,color){
+function drawRacket(x,y,swing,swingDir,color,racketId){
   if(swing<=0)return;
   var sa=swingDir*(-Math.PI*.5),ea=swingDir*(Math.PI*.35),angle=sa+(ea-sa)*(1-swing);
   ctx.save();ctx.globalAlpha=1;ctx.translate(x,y);ctx.rotate(angle);
   ctx.strokeStyle="#795548";ctx.lineWidth=3;ctx.lineCap="round";
   ctx.beginPath();ctx.moveTo(0,2);ctx.lineTo(0,18);ctx.stroke();
   ctx.strokeStyle=color;ctx.lineWidth=3;
+  // サンダーは太めのフレーム
+  if(racketId==="thunder")ctx.lineWidth=4;
   ctx.beginPath();ctx.ellipse(0,27,8,11,0,0,Math.PI*2);ctx.stroke();
+  // ガット
   ctx.strokeStyle="rgba(255,255,255,.7)";ctx.lineWidth=1;
   for(var ry=18;ry<=36;ry+=4){var v=ry-27,hw=Math.sqrt(Math.max(0,64-v*v))*.85;ctx.beginPath();ctx.moveTo(-hw,ry);ctx.lineTo(hw,ry);ctx.stroke();}
   for(var rx=-7;rx<=7;rx+=7){ctx.beginPath();ctx.moveTo(rx,17);ctx.lineTo(rx,37);ctx.stroke();}
   ctx.globalAlpha=swing*.2;ctx.fillStyle=color;
   ctx.beginPath();ctx.ellipse(0,27,11,14,0,0,Math.PI*2);ctx.fill();
+  // 特殊エフェクト
+  if(racketId==="ice"||racketId==="speed"||racketId==="thunder"){
+    ctx.globalAlpha=swing*0.55;
+    ctx.strokeStyle=color;ctx.lineWidth=2.5;
+    ctx.shadowColor=color;ctx.shadowBlur=10;
+    ctx.beginPath();ctx.ellipse(0,27,10,13,0,0,Math.PI*2);ctx.stroke();
+    ctx.shadowBlur=0;
+  }
   ctx.restore();
 }
 
-function drawMario(x,y,swing,swingDir,c){
+function drawMario(x,y,swing,swingDir,c,rk){
   var s=1.0;ctx.save();ctx.translate(x,y);
   ctx.fillStyle="#1565c0";rrect(-7*s,7*s,6*s,8*s,2*s);ctx.fill();rrect(1*s,7*s,6*s,8*s,2*s);ctx.fill();
   ctx.fillStyle="#5d4037";rrect(-7*s,13*s,7*s,4*s,2*s);ctx.fill();rrect(0,13*s,7*s,4*s,2*s);ctx.fill();
@@ -1479,10 +1647,10 @@ function drawMario(x,y,swing,swingDir,c){
   ctx.fillStyle="#1a1a1a";ctx.beginPath();ctx.arc(-2.5*s,-12*s,1.2*s,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(2.5*s,-12*s,1.2*s,0,Math.PI*2);ctx.fill();
   ctx.fillStyle="#e8a07a";ctx.beginPath();ctx.ellipse(1*s,-9*s,2.5*s,2*s,.2,0,Math.PI*2);ctx.fill();
   ctx.fillStyle="#3e2723";ctx.beginPath();ctx.ellipse(-3.5*s,-6.5*s,3.5*s,2*s,-.3,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(3.5*s,-6.5*s,3.5*s,2*s,.3,0,Math.PI*2);ctx.fill();
-  ctx.restore();if(swing>0)drawRacket(x+swingDir*13,y+3,swing,swingDir,c.hat||c.body);
+  ctx.restore();if(swing>0)drawRacket(x+swingDir*13,y+3,swing,swingDir,rk?rk.color:c.hat||c.body,rk?rk.id:"normal");
 }
 
-function drawLuigi(x,y,swing,swingDir,c){
+function drawLuigi(x,y,swing,swingDir,c,rk){
   var s=1.0;ctx.save();ctx.translate(x,y);
   ctx.fillStyle="#1565c0";rrect(-7*s,7*s,6*s,9*s,2*s);ctx.fill();rrect(1*s,7*s,6*s,9*s,2*s);ctx.fill();
   ctx.fillStyle="#5d4037";rrect(-7*s,14*s,7*s,4*s,2*s);ctx.fill();rrect(0,14*s,7*s,4*s,2*s);ctx.fill();
@@ -1501,10 +1669,10 @@ function drawLuigi(x,y,swing,swingDir,c){
   ctx.fillStyle="#1a1a1a";ctx.beginPath();ctx.arc(-2.5*s,-14*s,1.2*s,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(2.5*s,-14*s,1.2*s,0,Math.PI*2);ctx.fill();
   ctx.fillStyle="#e8a07a";ctx.beginPath();ctx.ellipse(1*s,-11*s,3*s,2.3*s,.2,0,Math.PI*2);ctx.fill();
   ctx.fillStyle="#3e2723";ctx.beginPath();ctx.ellipse(-3*s,-8*s,3*s,1.8*s,-.2,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(3*s,-8*s,3*s,1.8*s,.2,0,Math.PI*2);ctx.fill();
-  ctx.restore();if(swing>0)drawRacket(x+swingDir*13,y+3,swing,swingDir,c.hat||c.body);
+  ctx.restore();if(swing>0)drawRacket(x+swingDir*13,y+3,swing,swingDir,rk?rk.color:c.hat||c.body,rk?rk.id:"normal");
 }
 
-function drawBowser(x,y,swing,swingDir){
+function drawBowser(x,y,swing,swingDir,rk){
   // 骨クッパ：ゴツい骨格ボディ・赤髪・甲羅・赤く光る目
   var s=1.1;ctx.save();ctx.translate(x,y);
 
@@ -1602,10 +1770,10 @@ function drawBowser(x,y,swing,swingDir){
   ctx.strokeRect(1*s,-9*s,3*s,3*s);ctx.strokeRect(5*s,-9*s,4*s,4*s);
 
   ctx.restore();
-  if(swing>0)drawRacket(x+swingDir*15,y+5,swing,swingDir,"#8d6e63");
+  if(swing>0)drawRacket(x+swingDir*15,y+5,swing,swingDir,rk?rk.color:"#8d6e63",rk?rk.id:"normal");
 }
 
-function drawRosetta(x,y,swing,swingDir){
+function drawRosetta(x,y,swing,swingDir,rk){
   // ロゼッタ：ターコイズテニスウェア・金髪・銀王冠・青緑の目・細身
   var s=1.0;ctx.save();ctx.translate(x,y);
 
@@ -1701,7 +1869,7 @@ function drawRosetta(x,y,swing,swingDir){
   });
 
   ctx.restore();
-  if(swing>0)drawRacket(x+swingDir*13,y+2,swing,swingDir,"#26c6da");
+  if(swing>0)drawRacket(x+swingDir*13,y+2,swing,swingDir,rk?rk.color:"#26c6da",rk?rk.id:"normal");
 }
 
 function drawParticles(){
@@ -1723,9 +1891,10 @@ function gameStep(){
   if(!state.ballActive)return;
   var baseSpd=3.2;
 
-  // スタンタイマー更新
+  // スタン・スロウタイマー更新
   state.players.forEach(function(p){
     if(p.stunTimer>0)p.stunTimer--;
+    if(p.slowTimer>0)p.slowTimer--;
   });
 
   // 人間プレイヤー操作（最大2人）
@@ -1734,8 +1903,8 @@ function gameStep(){
     if(!state.players[i].human)continue;
     var p=state.players[i];
     if(p.stunTimer>0){humanCount++;continue;} // スタン中は動けない
-    // ルイージは1.2倍速
-    var spd=baseSpd*(CHARAS[p.charaIdx].id==="luigi"?1.2:1.0);
+    // ルイージは1.2倍速、スロウ中は0.5倍
+    var spd=baseSpd*(CHARAS[p.charaIdx].id==="luigi"?1.2:1.0)*(p.slowTimer>0?0.5:1.0);
     if(p.controlType==="remote"){
       applyRemoteInput(p,spd);
     } else if(p.controlType==="local"){
@@ -1752,17 +1921,29 @@ function gameStep(){
 
   // AI操作（スタン中はスキップ）
   for(var j=0;j<4;j++){
-    if(!state.players[j].human&&state.players[j].stunTimer===0)aiMove(j);
+    var pj=state.players[j];
+    if(!pj.human&&pj.stunTimer===0){
+      var aispd=pj.slowTimer>0?0.5:1.0;
+      aiMove(j,aispd);
+    }
   }
 
   // ロゼッタのボール曲がり
   if(state.rosettaCurve>0){
     var ball=state.ball;
-    // ボールをコート中央方向（x=CW/2）に少しずつ引き寄せる
     var centerPull=(CW/2-ball.x)*0.008;
     ball.vx+=centerPull;
     ball.vx=Math.max(-4,Math.min(4,ball.vx));
     state.rosettaCurve--;
+  }
+
+  // スピンラケットのカーブ
+  if(state.spinCurve&&state.spinCurve.timer>0){
+    var sball=state.ball;
+    sball.vx+=state.spinCurve.dir*0.14;
+    sball.vx=Math.max(-4,Math.min(4,sball.vx));
+    state.spinCurve.timer--;
+    if(state.spinCurve.timer<=0)state.spinCurve=null;
   }
 
   updateBall();
@@ -1804,6 +1985,18 @@ function gameUpdate(timestamp){
       g.addColorStop(1,"rgba(255,50,0,0)");
       ctx.beginPath();ctx.arc(p.x,p.y,PR*1.8,0,Math.PI*2);
       ctx.fillStyle=g;ctx.fill();
+      ctx.restore();
+    }
+    // スロウエフェクト（氷オーラ）
+    if(p.slowTimer>0){
+      ctx.save();
+      ctx.globalAlpha=0.35+0.2*Math.abs(Math.sin(Date.now()/200));
+      var ig=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,PR*1.6);
+      ig.addColorStop(0,"rgba(0,188,212,0.8)");
+      ig.addColorStop(0.6,"rgba(0,100,200,0.5)");
+      ig.addColorStop(1,"rgba(0,188,212,0)");
+      ctx.beginPath();ctx.arc(p.x,p.y,PR*1.6,0,Math.PI*2);
+      ctx.fillStyle=ig;ctx.fill();
       ctx.restore();
     }
   });
