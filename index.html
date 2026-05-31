@@ -17,6 +17,7 @@ var blob=new Blob([JSON.stringify(manifestData)],{type:"application/json"});
 var link=document.createElement("link");link.rel="manifest";link.href=URL.createObjectURL(blob);document.head.appendChild(link);
 if("serviceWorker" in navigator){var swCode="self.addEventListener('install',function(e){self.skipWaiting();});";navigator.serviceWorker.register(URL.createObjectURL(new Blob([swCode],{type:"application/javascript"}))).catch(function(){});}
 </script>
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
 <style>
 @import url("https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;900&display=swap");
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -62,6 +63,8 @@ body{background:#1a1a2e;font-family:"Nunito",sans-serif;display:flex;flex-direct
 .net-chara-btn span{font-size:.45rem;color:#bbb;}
 .net-code-label{color:#fff;font-size:.68rem;font-weight:900;}
 .net-qr{min-height:30px;border:1px dashed rgba(255,255,255,.25);border-radius:8px;padding:.35rem;color:rgba(255,255,255,.48);font-size:.58rem;text-align:center;}
+.net-room-code{font-family:"Fredoka One",cursive;font-size:2.2rem;letter-spacing:.18rem;color:#fff;background:#081321;border:2px solid #ffd700;border-radius:12px;padding:.35rem 1rem;text-align:center;}
+.net-room-input{width:150px;text-align:center;font-family:"Fredoka One",cursive;font-size:1.6rem;letter-spacing:.14rem;border:2px solid #52657d;border-radius:12px;background:#081321;color:#fff;padding:.35rem;}
 .net-game-overlay{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:180;background:rgba(8,19,33,.94);border:2px solid #ffd700;border-radius:14px;padding:1rem;width:min(88vw,360px);display:flex;flex-direction:column;gap:.7rem;align-items:center;text-align:center;color:#fff;}
 .net-game-overlay.hidden{display:none;}
 .net-game-overlay h3{font-family:"Fredoka One",cursive;color:#ffd700;font-size:1.2rem;}
@@ -151,28 +154,21 @@ canvas{max-width:640px;width:100%;display:block;}
     <div class="net-chara-list" id="net-chara-list"></div>
     <div class="net-panel hidden" id="net-host-panel">
       <div class="net-row">
-        <button class="net-mini-btn" onclick="netCreateHostOffer()">1. 親機コードを作る</button>
+        <button class="net-mini-btn" onclick="netCreateRoom()">部屋を作る</button>
       </div>
-      <div class="net-code-label">親機コード（子機へ渡す）</div>
-      <textarea class="net-text" id="net-host-offer" readonly></textarea>
-      <div class="net-qr" id="net-host-qr">QR補助: コードが長い時はコピー/貼り付けを使ってください</div>
-      <div class="net-code-label">子機コード（子機から受け取って貼る）</div>
-      <textarea class="net-text" id="net-host-answer"></textarea>
-      <div class="net-row">
-        <button class="net-mini-btn" onclick="netUseGuestAnswer()">2. 子機コードで接続</button>
-      </div>
+      <div class="net-code-label">子機にこの番号を入れてもらってください</div>
+      <div class="net-room-code" id="net-room-code">----</div>
+      <div class="net-help">子機が参加すると自動で試合が始まります。</div>
     </div>
     <div class="net-panel hidden" id="net-guest-panel">
-      <div class="net-code-label">親機コード（親機から受け取って貼る）</div>
-      <textarea class="net-text" id="net-guest-offer"></textarea>
+      <div class="net-code-label">親機の部屋番号</div>
       <div class="net-row">
-        <button class="net-mini-btn" onclick="netCreateGuestAnswer()">1. 子機コードを作る</button>
+        <input class="net-room-input" id="net-room-input" inputmode="numeric" maxlength="4" placeholder="1234">
+        <button class="net-mini-btn" onclick="netJoinRoom()">参加する</button>
       </div>
-      <div class="net-code-label">子機コード（親機へ渡す）</div>
-      <textarea class="net-text" id="net-guest-answer" readonly></textarea>
-      <div class="net-qr" id="net-guest-qr">QR補助: コードが長い時はコピー/貼り付けを使ってください</div>
+      <div class="net-help">4桁の番号だけで接続します。</div>
     </div>
-    <div class="net-help">つながらない時は、同じWi-Fiでも端末間通信が禁止されている可能性があります。コードを作り直してもだめなら別のWi-Fiで試してください。</div>
+    <div class="net-help">部屋番号の待ち合わせにPeerJSの公開サーバーを使います。つながらない時は、Wi-Fi設定やネットワーク制限の可能性があります。</div>
   </div>
 </div>
 
@@ -284,7 +280,7 @@ var controlTypes = ["local", "cpu", "cpu", "cpu"];
 var pickerTarget = -1;
 var PROTOCOL_VERSION = "tf-net-v1";
 var net = {
-  mode:"local",role:"none",pc:null,dc:null,connected:false,protocolVersion:PROTOCOL_VERSION,
+  mode:"local",role:"none",pc:null,peer:null,dc:null,roomCode:"",connected:false,protocolVersion:PROTOCOL_VERSION,
   lastSnapshotAt:0,lastInputAt:0,inputSeq:0,remoteFeverSeq:-1,targetState:null,targetFireballs:null,
   remoteInput:{dx:0,dy:0,touchActive:false,touchX:0,touchY:0,feverSeq:0}
 };
@@ -414,12 +410,14 @@ function netChooseRole(role){
     controlTypes=["local","cpu","remote","cpu"];
     document.getElementById("net-host-panel").classList.remove("hidden");
     document.getElementById("net-guest-panel").classList.add("hidden");
-    netSetStatus("親機: P1のキャラを選んで、親機コードを作ってください");
+    document.getElementById("net-room-code").textContent="----";
+    netSetStatus("親機: P1のキャラを選んで、部屋を作ってください");
   } else {
     controlTypes=["remote","cpu","local","cpu"];
     document.getElementById("net-host-panel").classList.add("hidden");
     document.getElementById("net-guest-panel").classList.remove("hidden");
-    netSetStatus("子機: P2のキャラを選んで、親機コードを貼ってください");
+    document.getElementById("net-room-input").value="";
+    netSetStatus("子機: P2のキャラを選んで、部屋番号を入れてください");
   }
   updateNetCharaChoices();
 }
@@ -664,7 +662,80 @@ function applyRemoteInput(p,spd){
 
 /* ===== 通信対戦 ===== */
 function netSupported(){
-  return !!(window.RTCPeerConnection&&window.btoa&&window.atob);
+  return !!(window.Peer||window.RTCPeerConnection);
+}
+function netPeerSupported(){
+  return !!window.Peer;
+}
+function netRoomPeerId(code){
+  return "tennis-fever-"+code;
+}
+function netMakeRoomCode(){
+  return String(1000+Math.floor(Math.random()*9000));
+}
+function netCreatePeer(id){
+  var peer;
+  if(id){peer=new Peer(id,{debug:1});}
+  else{peer=new Peer(null,{debug:1});}
+  peer.on("error",function(err){
+    net.connected=false;
+    if(err&&err.type==="unavailable-id"&&net.role==="host"){
+      netSetStatus("番号が使われています。もう一度部屋を作ってください");
+      var el=document.getElementById("net-room-code");
+      if(el)el.textContent="----";
+    } else {
+      netSetStatus("通信エラー: "+(err&&err.type?err.type:"接続できません"));
+    }
+  });
+  peer.on("disconnected",function(){netSetStatus("待ち合わせサーバーから切断されました");});
+  return peer;
+}
+function netCreateRoom(){
+  if(net.role!=="host")netChooseRole("host");
+  netClose(false);
+  if(!netPeerSupported()){netSetStatus("部屋番号方式を読み込めませんでした。通信環境を確認してください");return;}
+  net.role="host";net.mode="net";net.connected=false;
+  net.roomCode=netMakeRoomCode();
+  document.getElementById("net-room-code").textContent=net.roomCode;
+  net.peer=netCreatePeer(netRoomPeerId(net.roomCode));
+  net.peer.on("open",function(){
+    netSetStatus("部屋番号 "+net.roomCode+" で待っています");
+  });
+  net.peer.on("connection",function(conn){
+    if(net.dc&&net.dc.open){conn.close();return;}
+    net.dc=conn;
+    netSetupPeerChannel(conn);
+    netSetStatus("子機が参加しました。接続中...");
+  });
+}
+function netJoinRoom(){
+  if(net.role!=="guest")netChooseRole("guest");
+  netClose(false);
+  if(!netPeerSupported()){netSetStatus("部屋番号方式を読み込めませんでした。通信環境を確認してください");return;}
+  var input=document.getElementById("net-room-input");
+  var code=input?input.value.replace(/[^0-9]/g,""):"";
+  if(code.length!==4){netSetStatus("4桁の部屋番号を入れてください");return;}
+  net.role="guest";net.mode="net";net.connected=false;net.roomCode=code;
+  net.peer=netCreatePeer(null);
+  net.peer.on("open",function(){
+    netSetStatus("部屋 "+code+" に参加しています...");
+    net.dc=net.peer.connect(netRoomPeerId(code),{reliable:true});
+    netSetupPeerChannel(net.dc);
+  });
+}
+function netSetupPeerChannel(conn){
+  conn.on("open",function(){
+    net.connected=true;
+    netSetStatus("接続しました。試合を準備しています");
+    netSend({type:"hello",version:PROTOCOL_VERSION,role:net.role,chara:selections[netLocalSlot()]});
+  });
+  conn.on("data",function(data){netHandleMessage(data);});
+  conn.on("close",function(){
+    net.connected=false;
+    netSetStatus("通信が切れました");
+    if(gLoop&&net.mode==="net"){state.ballActive=false;netShowGameOverlay("通信が切れました。もう一度接続するか、タイトルへ戻ってください。");}
+  });
+  conn.on("error",function(){netSetStatus("通信エラーが発生しました");});
 }
 function netNewPeer(){
   if(!netSupported()){netSetStatus("このブラウザは通信対戦に対応していません");return null;}
@@ -775,13 +846,17 @@ function netSetupChannel(dc){
   dc.onmessage=function(e){netHandleMessage(e.data);};
 }
 function netSend(msg){
-  if(net.dc&&net.dc.readyState==="open"){
+  if(net.dc&&(net.dc.readyState==="open"||net.dc.open)){
     try{net.dc.send(JSON.stringify(msg));}catch(e){}
   }
 }
 function netHandleMessage(data){
   var msg;
-  try{msg=JSON.parse(data);}catch(e){return;}
+  if(typeof data==="string"){
+    try{msg=JSON.parse(data);}catch(e){return;}
+  } else {
+    msg=data;
+  }
   if(msg.type==="hello"){
     if(msg.version!==PROTOCOL_VERSION){
       netSend({type:"error",message:"バージョンが違います。両方の画面を再読み込みしてください"});
@@ -836,7 +911,8 @@ function netClose(sendNotice){
   if(sendNotice)netSend({type:"disconnect"});
   try{if(net.dc)net.dc.close();}catch(e){}
   try{if(net.pc)net.pc.close();}catch(e){}
-  net.pc=null;net.dc=null;net.connected=false;net.targetState=null;net.targetFireballs=null;
+  try{if(net.peer)net.peer.destroy();}catch(e){}
+  net.pc=null;net.peer=null;net.dc=null;net.connected=false;net.targetState=null;net.targetFireballs=null;
 }
 function netBuildInput(){
   var dx=0,dy=0;
