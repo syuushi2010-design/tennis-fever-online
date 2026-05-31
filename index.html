@@ -280,9 +280,10 @@ var controlTypes = ["local", "cpu", "cpu", "cpu"];
 var pickerTarget = -1;
 var PROTOCOL_VERSION = "tf-net-v1";
 var net = {
-  mode:"local",role:"none",pc:null,peer:null,dc:null,roomCode:"",connected:false,protocolVersion:PROTOCOL_VERSION,
+  mode:"local",role:"none",pc:null,peer:null,dc:null,dcUnrel:null,roomCode:"",connected:false,protocolVersion:PROTOCOL_VERSION,
   lastSnapshotAt:0,lastInputAt:0,inputSeq:0,remoteFeverSeq:-1,targetState:null,targetFireballs:null,
-  remoteInput:{dx:0,dy:0,touchActive:false,touchX:0,touchY:0,feverSeq:0}
+  remoteInput:{dx:0,dy:0,touchActive:false,touchX:0,touchY:0,feverSeq:0},
+  snapshotSeq:0,lastSnapshotSeq:-1,predX:0,predY:0
 };
 var localTouchTarget = null;
 
@@ -702,10 +703,19 @@ function netCreateRoom(){
     netSetStatus("部屋番号 "+net.roomCode+" で待っています");
   });
   net.peer.on("connection",function(conn){
-    if(net.dc&&net.dc.open){conn.close();return;}
-    net.dc=conn;
-    netSetupPeerChannel(conn);
-    netSetStatus("子機が参加しました。接続中...");
+    if(conn.metadata&&conn.metadata.label==="game"){
+      if(net.dcUnrel&&net.dcUnrel.open){conn.close();return;}
+      net.dcUnrel=conn;
+      conn.on("open",function(){});
+      conn.on("data",function(data){netHandleMessage(data);});
+      conn.on("close",function(){net.dcUnrel=null;});
+      conn.on("error",function(){});
+    } else {
+      if(net.dc&&net.dc.open){conn.close();return;}
+      net.dc=conn;
+      netSetupPeerChannel(conn);
+      netSetStatus("子機が参加しました。接続中...");
+    }
   });
 }
 function netJoinRoom(){
@@ -719,8 +729,13 @@ function netJoinRoom(){
   net.peer=netCreatePeer(null);
   net.peer.on("open",function(){
     netSetStatus("部屋 "+code+" に参加しています...");
-    net.dc=net.peer.connect(netRoomPeerId(code),{reliable:true});
+    net.dc=net.peer.connect(netRoomPeerId(code),{reliable:true,metadata:{label:"events"}});
+    net.dcUnrel=net.peer.connect(netRoomPeerId(code),{reliable:false,metadata:{label:"game"}});
     netSetupPeerChannel(net.dc);
+    net.dcUnrel.on("open",function(){});
+    net.dcUnrel.on("data",function(data){netHandleMessage(data);});
+    net.dcUnrel.on("close",function(){net.dcUnrel=null;});
+    net.dcUnrel.on("error",function(){});
   });
 }
 function netSetupPeerChannel(conn){
@@ -779,8 +794,13 @@ function netCreateHostOffer(){
   net.role="host";net.mode="net";net.connected=false;
   net.pc=netNewPeer();
   if(!net.pc)return;
-  net.dc=net.pc.createDataChannel("tennis-fever");
+  net.dc=net.pc.createDataChannel("events");
   netSetupChannel(net.dc);
+  net.dcUnrel=net.pc.createDataChannel("game",{ordered:false,maxRetransmits:0});
+  net.dcUnrel.onopen=function(){};
+  net.dcUnrel.onmessage=function(e){netHandleMessage(e.data);};
+  net.dcUnrel.onclose=function(){net.dcUnrel=null;};
+  net.dcUnrel.onerror=function(){};
   net.pc.createOffer().then(function(offer){
     return net.pc.setLocalDescription(offer);
   }).then(function(){
@@ -802,8 +822,16 @@ function netCreateGuestAnswer(){
   net.pc=netNewPeer();
   if(!net.pc)return;
   net.pc.ondatachannel=function(e){
-    net.dc=e.channel;
-    netSetupChannel(net.dc);
+    if(e.channel.label==="game"){
+      net.dcUnrel=e.channel;
+      net.dcUnrel.onopen=function(){};
+      net.dcUnrel.onmessage=function(ev){netHandleMessage(ev.data);};
+      net.dcUnrel.onclose=function(){net.dcUnrel=null;};
+      net.dcUnrel.onerror=function(){};
+    } else {
+      net.dc=e.channel;
+      netSetupChannel(net.dc);
+    }
   };
   var offer;
   try{offer=netDecode(code);}catch(e){netSetStatus("親機コードを読めませんでした");return;}
@@ -850,6 +878,12 @@ function netSend(msg){
     try{net.dc.send(JSON.stringify(msg));}catch(e){}
   }
 }
+function netSendGame(msg){
+  var ch=net.dcUnrel||net.dc;
+  if(ch&&(ch.readyState==="open"||ch.open)){
+    try{ch.send(JSON.stringify(msg));}catch(e){}
+  }
+}
 function netHandleMessage(data){
   var msg;
   if(typeof data==="string"){
@@ -886,8 +920,11 @@ function netHandleMessage(data){
       tryFever(2);
     }
   } else if(msg.type==="snapshot"&&net.role==="guest"){
-    net.targetState=msg.state;
-    net.targetFireballs=msg.fireballs||[];
+    if(msg.seq===undefined||msg.seq>net.lastSnapshotSeq){
+      net.lastSnapshotSeq=msg.seq||0;
+      net.targetState=msg.state;
+      net.targetFireballs=msg.fireballs||[];
+    }
   } else if(msg.type==="announce"){
     showAnnounceLocal(msg.text);
   } else if(msg.type==="result"){
@@ -910,9 +947,11 @@ function netSendStart(){
 function netClose(sendNotice){
   if(sendNotice)netSend({type:"disconnect"});
   try{if(net.dc)net.dc.close();}catch(e){}
+  try{if(net.dcUnrel)net.dcUnrel.close();}catch(e){}
   try{if(net.pc)net.pc.close();}catch(e){}
   try{if(net.peer)net.peer.destroy();}catch(e){}
-  net.pc=null;net.peer=null;net.dc=null;net.connected=false;net.targetState=null;net.targetFireballs=null;
+  net.pc=null;net.peer=null;net.dc=null;net.dcUnrel=null;net.connected=false;
+  net.targetState=null;net.targetFireballs=null;net.snapshotSeq=0;net.lastSnapshotSeq=-1;
 }
 function netBuildInput(){
   var dx=0,dy=0;
@@ -925,9 +964,9 @@ function netBuildInput(){
 function netSendInput(force){
   if(net.mode!=="net"||net.role!=="guest"||!net.connected)return;
   var now=Date.now();
-  if(!force&&now-net.lastInputAt<33)return;
+  if(!force&&now-net.lastInputAt<16)return;
   net.lastInputAt=now;
-  netSend({type:"input",input:netBuildInput()});
+  netSendGame({type:"input",input:netBuildInput()});
 }
 function clonePlain(obj){
   return JSON.parse(JSON.stringify(obj));
@@ -935,9 +974,10 @@ function clonePlain(obj){
 function netSendSnapshot(force){
   if(net.mode!=="net"||net.role!=="host"||!net.connected)return;
   var now=Date.now();
-  if(!force&&now-net.lastSnapshotAt<50)return;
+  if(!force&&now-net.lastSnapshotAt<16)return;
   net.lastSnapshotAt=now;
-  netSend({type:"snapshot",state:clonePlain(state),fireballs:clonePlain(fireballs)});
+  net.snapshotSeq++;
+  netSendGame({type:"snapshot",seq:net.snapshotSeq,state:clonePlain(state),fireballs:clonePlain(fireballs)});
 }
 function netApplySnapshot(){
   if(net.mode!=="net"||net.role!=="guest"||!net.targetState)return;
@@ -956,7 +996,17 @@ function netApplySnapshot(){
   }
   if(state.players){
     state.players.forEach(function(p,i){
-      if(oldPlayers[i]){
+      if(i===2){
+        var srvX=target.players[2].x,srvY=target.players[2].y;
+        var diffX=srvX-net.predX,diffY=srvY-net.predY;
+        var dist=Math.sqrt(diffX*diffX+diffY*diffY);
+        if(dist>80){
+          p.x=srvX;p.y=srvY;net.predX=srvX;net.predY=srvY;
+        } else {
+          p.x=net.predX+diffX*0.08;
+          p.y=net.predY+diffY*0.08;
+        }
+      } else if(oldPlayers[i]){
         p.x=oldPlayers[i].x+(target.players[i].x-oldPlayers[i].x)*0.45;
         p.y=oldPlayers[i].y+(target.players[i].y-oldPlayers[i].y)*0.45;
       }
@@ -1783,6 +1833,15 @@ function gameUpdate(timestamp){
   if(dt>200)dt=FIXED_DT;
   if(net.mode==="net"&&net.role==="guest"){
     netSendInput(false);
+    if(state.players&&state.players[2]&&state.ballActive&&state.players[2].stunTimer===0){
+      var p2=state.players[2];
+      var spd2=3.2*(CHARAS[p2.charaIdx].id==="luigi"?1.2:1.0);
+      applyLocalInput(p2,spd2,0);
+      p2.y=Math.max(CT+PR,Math.min(NY-PR-2,p2.y));
+      p2.x=Math.max(CL+PR,Math.min(CR-PR,p2.x));
+      net.predX=p2.x;
+      net.predY=p2.y;
+    }
     netApplySnapshot();
   } else {
     acc+=dt;
