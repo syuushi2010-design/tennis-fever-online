@@ -21,8 +21,8 @@ if("serviceWorker" in navigator){var swCode="self.addEventListener('install',fun
 <style>
 @import url("https://fonts.googleapis.com/css2?family=Fredoka+One&family=Nunito:wght@700;900&display=swap");
 *{margin:0;padding:0;box-sizing:border-box;}
-html,body{width:100%;height:100%;height:100dvh;overflow:hidden;position:fixed;top:0;left:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);}
-body{background:#1a1a2e;font-family:"Nunito",sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;user-select:none;}
+html{width:100%;height:100%;overflow:hidden;}
+body{width:100%;height:100%;height:100dvh;overflow:hidden;position:fixed;top:0;left:0;overscroll-behavior:none;background:#1a1a2e;font-family:"Nunito",sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;user-select:none;}
 .screen{position:absolute;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1rem;transition:opacity 0.3s;}
 .hidden{opacity:0;pointer-events:none;}
 /* タイトル */
@@ -90,7 +90,7 @@ body{background:#1a1a2e;font-family:"Nunito",sans-serif;display:flex;flex-direct
 .chara-option span{font-size:.5rem;color:#aaa;}
 .cpu-badge{position:absolute;bottom:-4px;right:-4px;background:#888;color:#fff;font-size:.45rem;padding:1px 4px;border-radius:6px;font-family:Nunito;}
 /* ゲーム画面 */
-#game-screen{flex-direction:column;background:#0f0f23;gap:0;}
+#game-screen{flex-direction:column;justify-content:flex-start;align-items:center;background:#0f0f23;gap:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);box-sizing:border-box;}
 #hud{width:100%;max-width:640px;display:flex;justify-content:space-between;align-items:stretch;padding:4px 8px;gap:4px;box-sizing:border-box;}
 .team-hud{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0;}
 .team-names{font-family:"Fredoka One",cursive;font-size:.65rem;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -298,11 +298,16 @@ var ctx=canvas.getContext("2d");
 
 function resizeCanvas(){
   var dpr=Math.min(window.devicePixelRatio||1,2);
-  // 利用可能な幅・高さからHUD分を引いてコートサイズを決める
-  var hudH=56; // HUDの高さ分
+  var hudH=56;
   var hintH=20;
-  var maxW=Math.min(window.innerWidth, 640);
-  var maxH=window.innerHeight - hudH - hintH;
+  var gs=document.getElementById("game-screen");
+  var cs=gs?getComputedStyle(gs):null;
+  var ptop=cs?Math.round(parseFloat(cs.paddingTop)||0):0;
+  var pbottom=cs?Math.round(parseFloat(cs.paddingBottom)||0):0;
+  var pleft=cs?Math.round(parseFloat(cs.paddingLeft)||0):0;
+  var pright=cs?Math.round(parseFloat(cs.paddingRight)||0):0;
+  var maxW=Math.min(window.innerWidth-pleft-pright, 640);
+  var maxH=window.innerHeight - hudH - hintH - ptop - pbottom;
   // アスペクト比 1:1（正方形）を維持しつつ画面に収める
   var w,h;
   if(maxW<maxH){
